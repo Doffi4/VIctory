@@ -7,6 +7,7 @@ use super::*;
 
 const ORIGINAL_SIZE: (u32, u32) = (384, 216);
 const RESIZED_SIZE: (u32, u32) = (320, 180);
+const RESIZE_MARKER_SIZE: (usize, usize) = (16, 8);
 
 #[test]
 #[ignore = "requires an interactive Windows desktop and D3D12"]
@@ -43,10 +44,8 @@ fn synthetic_presentx() {
         make_list(device, &[0; 4], allocator, null(), &list_iid, &mut list),
         S_OK
     );
-    let clear = slot::<extern "system" fn(This, u64, *const [f32; 4], u32, *const std::ffi::c_void)>(
-        list,
-        52 * 8,
-    );
+    let clear =
+        slot::<extern "system" fn(This, u64, *const [f32; 4], u32, *const RECT)>(list, 52 * 8);
     let close = slot::<extern "system" fn(This) -> HRESULT>(list, 9 * 8);
     let reset = slot::<extern "system" fn(This, This, This, u32) -> HRESULT>(list, 139 * 8);
     let submit = slot::<extern "system" fn(This, u32, *const This, u64, u32)>(queue, 35 * 8);
@@ -173,6 +172,16 @@ fn synthetic_presentx() {
             let before = crate::draw::drawn();
             slot::<extern "system" fn(This, u32, u32, u32, u32)>(list, 12 * 8)(list, 3, 1, 0, 0);
             assert_eq!(crate::draw::drawn(), before + 1);
+            if frame == 2 {
+                // Distinguish the first back buffer after resizing from the previous green frame.
+                let marker = RECT {
+                    left: 0,
+                    top: 0,
+                    right: RESIZE_MARKER_SIZE.0 as i32,
+                    bottom: RESIZE_MARKER_SIZE.1 as i32,
+                };
+                clear(list, handle, &[1.0, 0.0, 0.0, 1.0], 1, &marker);
+            }
         }
         assert_eq!(close(list), S_OK);
         submit(queue, 1, &list, frame as u64, 0);
@@ -275,13 +284,14 @@ pub(super) fn check_pixels(
                 data.cast::<u8>().add(offset),
                 layout.Width as usize * 4,
             );
-            assert!(
-                row.as_chunks::<4>()
-                    .0
-                    .iter()
-                    .all(|pixel| *pixel == expected),
-                "swap-chain frame {frame}, row {y}"
-            );
+            for (x, pixel) in row.as_chunks::<4>().0.iter().enumerate() {
+                let color = if frame == 3 && x < RESIZE_MARKER_SIZE.0 && y < RESIZE_MARKER_SIZE.1 {
+                    [255, 0, 0, 255]
+                } else {
+                    expected
+                };
+                assert_eq!(*pixel, color, "swap-chain frame {frame}, pixel ({x}, {y})");
+            }
         }
         buffer.Unmap(0, None);
     }
