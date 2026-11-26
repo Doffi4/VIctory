@@ -197,7 +197,7 @@ fn synthetic_presentx() {
             assert_eq!(present(queue, 1, &plane, null()), S_OK);
             assert_eq!(crate::queue::presented(), frame as u64 + 1);
             let guard = host.presenter.lock().unwrap();
-            let presenter = guard.as_ref().expect("swap chain created");
+            let presenter = guard.presenter.as_ref().expect("swap chain created");
             // SAFETY: the presenter owns the live swap chain.
             let next = unsafe { presenter.swap_chain.GetCurrentBackBufferIndex() };
             let previous = if frame >= 2 { 0 } else { frame as u32 };
